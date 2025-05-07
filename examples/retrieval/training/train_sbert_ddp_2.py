@@ -4,7 +4,7 @@ import json
 import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
-from sentence_transformers import SentenceTransformer, losses, InputExample
+from sentence_transformers import SentenceTransformer, losses, InputExample, util as util_st
 from sentence_transformers import SentenceTransformerTrainer, SentenceTransformerTrainingArguments
 from datasets import Dataset
 from beir import util
@@ -33,7 +33,7 @@ print(torch.__version__)
 
 
 # ** Paths **
-model_name = "snowflake-arctic-embed-m-v1.5_ED"
+model_name = "distilbert/distilbert-base-uncased"
 save_dir = os.path.join(pathlib.Path(__file__).parent.absolute(), "output", f"{model_name}-hotpotqa-lr3e-5-epochs10-temperature20_full_dev")
 os.makedirs(save_dir, exist_ok=True)
 
@@ -44,17 +44,32 @@ data_path = util.download_and_unzip(url, "datasets")
 corpus, queries, qrels = GenericDataLoader(data_path).load(split="train")
 
 # Create InputExample list
-train_examples = []
+# train_examples = []
+# for qid, pos_ids in qrels.items():
+#     query = queries[qid]
+#     for pos_id in pos_ids:
+#         if pos_id in corpus:
+#             pos_text = corpus[pos_id]["text"]
+#             train_examples.append(InputExample(texts=[query, pos_text]))
+all_examples = []
 for qid, pos_ids in qrels.items():
-    query = queries[qid]
-    for pos_id in pos_ids:
-        if pos_id in corpus:
-            pos_text = corpus[pos_id]["text"]
-            train_examples.append(InputExample(texts=[query, pos_text]))
+    query = queries[qid]                         
+    for pid in pos_ids:
+        if pid in corpus:
+            pos_text = corpus[pid]["text"]  
+            all_examples.append(InputExample(texts=[query, pos_text]))
+# from sentence_transformers.datasets import SentenceTransformerDataset
+from sklearn.model_selection import train_test_split
+train_examples, val_examples = train_test_split(
+    all_examples, test_size=0.10, random_state=42, shuffle=True
+)
 
+# Sentence‑Transformers smart‑batching datasets
+# train_dataset = SentenceTransformerDataset(train_examples, model)
+# eval_dataset  = SentenceTransformerDataset(val_examples,  model)
 
 # ** Load model **
-model = SentenceTransformer("Snowflake/snowflake-arctic-embed-m-v1.5")
+model = SentenceTransformer("distilbert-base-uncased")
 model.to(device)
 
 print(model.similarity)
@@ -70,6 +85,8 @@ print("Model device:", model.device)
 #train_dataset = SentenceTransformerDataset(train_examples, model.module)  # DDP wraps model
 train_data = [{"query": example.texts[0], "text": example.texts[1]} for example in train_examples]
 train_dataset = Dataset.from_dict({k: [d[k] for d in train_data] for k in train_data[0]})
+eval_data = [{"query": example.texts[0], "text": example.texts[1]} for example in val_examples]
+eval_dataset = Dataset.from_dict({k: [d[k] for d in eval_data] for k in eval_data[0]})
 #train_dataset = train_examples
 
 # ** Create DDP Sampler **
@@ -78,26 +95,71 @@ train_dataset = Dataset.from_dict({k: [d[k] for d in train_data] for k in train_
 
 
 # ** Training Args **
+# training_args = SentenceTransformerTrainingArguments(
+#     output_dir=save_dir,
+#     warmup_steps=int(len(train_dataset)//16*0.1),
+#     num_train_epochs=6,
+#     per_device_train_batch_size=16,
+#     gradient_accumulation_steps=4,
+#     learning_rate=3e-5,
+#     weight_decay=0.01,
+#     warmup_ratio=0.1,
+#     fp16=True,
+#     logging_steps=25,
+#     save_strategy="epoch",
+#     metric_for_best_model="loss",
+#     load_best_model_at_end=True,
+#     max_grad_norm=1.0,
+#     save_total_limit=10,
+#     ddp_find_unused_parameters=False,
+#     seed=24,
+# )
 training_args = SentenceTransformerTrainingArguments(
-    output_dir=save_dir,
+    output_dir=str(save_dir),
+
+    # scheduling
     num_train_epochs=10,
     per_device_train_batch_size=16,
+    gradient_accumulation_steps=4,
     learning_rate=3e-5,
-    warmup_steps=int(len(train_dataset) * 10 / 16 * 0.1),
-    logging_steps=1,
-    save_strategy="epoch",
-    evaluation_strategy="no",
-    save_total_limit=10,
-    ddp_find_unused_parameters=False
-)
+    weight_decay=0.01,
+    warmup_steps=int(len(train_dataset) / 16 * 0.1),
 
+    # optimisation
+    fp16=True,
+    max_grad_norm=1.0,
+
+    # logging / saving
+    logging_steps=25,
+    save_steps=0,            # save at epoch end is not built‑in → 0 disables
+    save_total_limit=10,
+
+    # misc
+    ddp_find_unused_parameters=False,
+    seed=24,
+    dataloader_drop_last=True,
+    # evaluation_strategy="epoch",
+    # metric_for_best_model="loss",
+    # load_best_model_at_end=True,
+)
+training_args = training_args.set_evaluate(
+    strategy="epoch",   # or "steps"
+    batch_size=16,      # eval batch size
+    loss_only=True,     # compute full metrics, not just loss
+    delay=0.0,
+)
 # ** Train **
 trainer = SentenceTransformerTrainer(
     model=model.module,
     args=training_args,
     train_dataset=train_dataset,
-    loss=losses.MultipleNegativesRankingLoss(model=model.module),
-    eval_dataset=None,
+    eval_dataset=eval_dataset,
+    loss=losses.MultipleNegativesRankingLoss(
+    model=model.module,
+    similarity_fct=lambda x, y, m: util_st.energy_distance(x, y, m, metric="L1"),
+    scale=20.0,
+    # evaluation_strategy="epoch", 
+    ),
     callbacks=[]
 )
 
