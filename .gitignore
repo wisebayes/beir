@@ -142,3 +142,7 @@ dmypy.json
 ./examples/retrieval/training/output_0
 ./examples/retrieval/training/output_distilbert_0
 ./examples/retrieval/training/error_distilbert_0
+
+# large checkpoints
+*.pt
+*.safetensors
