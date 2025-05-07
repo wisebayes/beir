@@ -134,3 +134,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+./examples/retrieval/training/datasets
+./examples/retrieval/training/output
+./examples/retrieval/training/output_distilbert
+./examples/retrieval/training/error_distilbert
+./examples/retrieval/training/output_0
+./examples/retrieval/training/output_distilbert_0
+./examples/retrieval/training/error_distilbert_0
