@@ -142,6 +142,9 @@ examples/retrieval/training/error_distilbert
 examples/retrieval/training/output_0
 examples/retrieval/training/output_distilbert_0
 examples/retrieval/training/error_distilbert_0
+examples/retrieval/training/output_distilbert_1
+examples/retrieval/training/error_distilbert_1
+examples/retrieval/training/output1
 
 # large checkpoints
 *.pt

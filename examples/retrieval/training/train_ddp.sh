@@ -2,11 +2,11 @@
 
 #SBATCH -J train-sentence-transformer
 #SBATCH --nodes=1                   # Single node
-#SBATCH --gres=gpu:h100:2                # 8 GPUs on this node
+#SBATCH --gres=gpu:2                # 8 GPUs on this node
 #SBATCH --ntasks-per-node=2         # One process per GPU
 #SBATCH --cpus-per-task=8           # 8 CPU cores per task
 #SBATCH --time=10:00:00            # Extended wall time
-#SBATCH --mem-per-cpu=16gb
+#SBATCH --mem-per-cpu=10gb
 #SBATCH --account=edu             # Requested QoS IMPORTANT: REPLACE WITH SBATCH --account=edu if using Terremoto cluster
 #SBATCH --output=output_distilbert/distilbert-base-uncased_ED-hotpotqa-lr1e-5-epochs10-temperature20_full_dev_3.out	  # Standard output log file (make sure correct LR and scale are set)
 #SBATCH --error=error_distilbert/distilbert-base-uncased_ED-hotpotqa-lr1e-5-epochs10-temperature20_full_dev_3.out        # Standard error log file (make sure correct LR and scale are set)
@@ -37,10 +37,11 @@ export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
 export WORLD_SIZE=$(($SLURM_NNODES * $SLURM_NTASKS_PER_NODE))
 echo "WORLD_SIZE="$WORLD_SIZE
 echo "MASTER_ADDR="$MASTER_ADDR
+export WANDB_API_KEY="3f646dc5a3f9dfa09ee9c678d056b77365660556"
 
-pip list
 nvidia-smi
+pip list
 # Run training with torchrun for DDP
-torchrun --nproc_per_node=2 /insomnia001/depts/edu/COMSE6998/ck3255/beir/examples/retrieval/training/train_sbert_ddp_2.py
+exec $CONDA_PREFIX/bin/torchrun --nproc_per_node=2 /insomnia001/depts/edu/COMSE6998/ck3255/beir/examples/retrieval/training/train_sbert_ddp_2.py
 # torchrun --nproc_per_node=2 /gpfs/u/home/MSSV/MSSVntsn/barn/beir/examples/retrieval/training/train_sbert_ddp_2.py
 #torchrun --nproc_per_node=4 /gpfs/u/home/MSSV/MSSVntsn/barn/beir/examples/retrieval/training/test_ddp.py
